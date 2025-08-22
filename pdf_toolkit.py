@@ -1,6 +1,6 @@
 import os
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 from PyPDF2 import PdfReader, PdfWriter
 
 
@@ -33,23 +33,63 @@ class PDFToolkitApp:
             messagebox.showinfo("Success", "PDF merged successfully!")
 
     def split_pdf(self):
-        file = filedialog.askopenfilenames(filetypes=[("PDF files", "*.pdf")])
-        if not file:
+        # 1) pick ONE source PDF
+        src = filedialog.askopenfilename(
+            title="Select PDF file",
+            filetypes=[("PDF files", "*.pdf")],
+        )
+        if not src:
             return
-        reader = PdfReader(file)
-        for i, page in enumerate(reader.pages):
-            writer = PdfWriter()
-            writer.addPage(page)
-            out_name =f"page_{i+1}.pdf"
-            with open(out_name, "wb") as out:
-                writer.write(out)
-        messagebox.showinfo("Success", "PDF split into individual pages!")
+
+        # 2) open (and handle encryption if needed)
+        try:
+            reader = PdfReader(src)
+            if getattr(reader, "is_encrypted", False):
+                pwd = simpledialog.askstring("Password required", "Please enter your password")
+                if not pwd:
+                    messagebox.showwarning("Warning", "No password entered")
+                    return
+                ok = reader.decrypt(pwd)
+                if ok == 0:
+                    messagebox.showerror("Error", "Wrong password")
+                    return
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not open PDF:\n{e}")
+            return
+
+        pages = len(reader.pages)
+        if pages == 0:
+            messagebox.showerror("Error", "PDF has 0 pages (or could not be read)")
+            return
+
+        # 3) choose output folder
+        out_dir = filedialog.askdirectory(title="Select output folder for split pages")
+        if not out_dir:
+            return
+
+        # 4) write one file per page
+        base = os.path.splitext(os.path.basename(src))[0]
+        written = 0
+        try:
+            for i in range(pages):
+                writer = PdfWriter()
+                writer.add_page(reader.pages[i])
+                out_path = os.path.join(out_dir, f"{base}_page_{i+1}.pdf")
+                with open(out_path, "wb") as f:
+                    writer.write(f)
+                written += 1
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed while writing pages:\n{e}")
+            return
+
+        messagebox.showinfo("Success", f"PDFs split into {written} pages.\nSaved in: {out_dir}")
+
 
     def compress_pdf(self):
         messagebox.showinfo("Coming soon", "Compression is a placeholder (uses Ghostscript).")
 
     def encrypt_pdf(self):
-        file = filedialog.askopenfilenames(filetypes=[("PDF files", "*.pdf")])
+        file = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf")])
         if not file:
             return
         reader = PdfReader(file)
@@ -65,7 +105,7 @@ class PDFToolkitApp:
             messagebox.showinfo("Success", f"PDF encrypted with password '{password}'!")
 
     def decrypt_pdf(self):
-        file = filedialog.askopenfilenames(filetypes=[("PDF files", "*.pdf")])
+        file = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf")])
         if not file:
             return
         password = "1234" # could ask user later
